@@ -1277,11 +1277,11 @@ func (c *MPIJobController) getConfigMap(mpiJob *kubeflow.MPIJob) (*corev1.Config
 // one if it doesn't exist.
 func (c *MPIJobController) getOrCreateConfigMap(mpiJob *kubeflow.MPIJob) (*corev1.ConfigMap, error) {
 	klog.Infof("create config called for %s", getJobKey(mpiJob))
-	newCM := newConfigMap(mpiJob, c.workerReplicas(mpiJob))
 	podList, err := c.getRunningWorkerPods(mpiJob)
 	if err != nil {
 		return nil, err
 	}
+	newCM := newConfigMap(mpiJob, c.workerReplicas(mpiJob), podList)
 	updateDiscoverHostsInConfigMap(newCM, mpiJob, podList)
 
 	cm, err := c.configMapLister.ConfigMaps(mpiJob.Namespace).Get(mpiJob.Name + configSuffix)
@@ -1935,7 +1935,7 @@ func (c *MPIJobController) doUpdateJobStatus(mpiJob *kubeflow.MPIJob) error {
 // newConfigMap creates a new ConfigMap containing configurations for an MPIJob
 // resource. It also sets the appropriate OwnerReferences on the resource so
 // handleObject can discover the MPIJob resource that 'owns' it.
-func newConfigMap(mpiJob *kubeflow.MPIJob, workerReplicas int32) *corev1.ConfigMap {
+func newConfigMap(mpiJob *kubeflow.MPIJob, workerReplicas int32, workerPods []*corev1.Pod) *corev1.ConfigMap {
 	var buffer bytes.Buffer
 	slots := ptr.Deref(mpiJob.Spec.SlotsPerWorker, 1)
 	// note that pod.spec.dnsConfig also affect the svc resolution
@@ -1955,8 +1955,22 @@ func newConfigMap(mpiJob *kubeflow.MPIJob, workerReplicas int32) *corev1.ConfigM
 	for i := 0; i < int(*mpiJob.Spec.MPIReplicaSpecs[kubeflow.MPIReplicaTypeWorker].MaxReplicas); i++ {
 		name := workerName(mpiJob, i)
 
-		//buffer.WriteString(fmt.Sprintf("host %s.%s ++cpus %d\n", name, mpiJob.Name, slots))
-		buffer.WriteString(fmt.Sprintf("%s.%s.%s.svc slots=%d\n", name, mpiJob.Name, mpiJob.Namespace, slots))
+		// Find the corresponding pod for this worker
+		var podIP string
+		for _, pod := range workerPods {
+			if pod.Name == name && pod.Status.PodIP != "" {
+				podIP = pod.Status.PodIP
+				break
+			}
+		}
+
+		// Use IP address if available, otherwise fall back to DNS name
+		if podIP != "" {
+			buffer.WriteString(fmt.Sprintf("%s slots=%d\n", podIP, slots))
+		} else {
+			// Fallback to DNS name if IP is not available
+			buffer.WriteString(fmt.Sprintf("%s.%s.%s.svc slots=%d\n", name, mpiJob.Name, mpiJob.Namespace, slots))
+		}
 		/*switch mpiJob.Spec.MPIImplementation {
 		case kubeflow.MPIImplementationOpenMPI:
 			buffer.WriteString(fmt.Sprintf("%s.%s.%s.svc slots=%d\n", name, mpiJob.Name, mpiJob.Namespace, slots))
