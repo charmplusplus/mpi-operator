@@ -8241,7 +8241,7 @@ spec:
       - args:
         - -alsologtostderr
         - --lock-namespace=mpi-operator
-        image: adityapb/mpi-operator:mpi-imm
+        image: adityapb/mpi-operator:mpi
         imagePullPolicy: Always
         name: mpi-operator
       serviceAccountName: mpi-operator

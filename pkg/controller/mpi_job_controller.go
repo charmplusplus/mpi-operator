@@ -689,6 +689,7 @@ func signalRescale(ipAddr string, port int32, oldProcs int32, newProcs int32) er
 		klog.Infof("Error when rescaling")
 		return err
 	}
+	time.Sleep(3 * time.Second)
 	return nil
 }
 

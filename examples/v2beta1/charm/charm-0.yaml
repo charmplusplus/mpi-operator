@@ -46,7 +46,7 @@ spec:
               sizeLimit: 1.5Gi
     Worker:
       minReplicas: 15
-      maxReplicas: 31
+      maxReplicas: 59
       template:
         spec:
           containers:

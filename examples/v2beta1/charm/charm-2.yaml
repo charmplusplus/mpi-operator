@@ -45,8 +45,8 @@ spec:
               medium: Memory
               sizeLimit: 1Gi
     Worker:
-      minReplicas: 43
-      maxReplicas: 43
+      minReplicas: 31
+      maxReplicas: 31
       template:
         spec:
           containers:
