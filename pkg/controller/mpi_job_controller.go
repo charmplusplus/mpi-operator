@@ -468,7 +468,7 @@ func NewMPIJobControllerWithClock(
 		oldExpandReplicas:   make(map[string]int32),
 		runningJobs:         pqRunning,
 		queuedJobs:          pqQueued,
-		freeSlots:           60,
+		freeSlots:           10,
 		rescaleGap:          1 * time.Second, // 3 minutes
 	}
 	// FIXME fix the free slots!
@@ -1534,10 +1534,12 @@ func (c *MPIJobController) calculateWorkerReplicas(mpiJob *kubeflow.MPIJob) (int
 			klog.Infof("Queued job 1 %s, %d", getJobKey(mpiJob), numWorkersToFree)
 			return 0, jobQueuedError
 		} else {
-			numWorkersToFree = *worker.MinReplicas - int32(c.freeSlots) + 1
-			index = len(c.runningJobs) - 1
+			//numWorkersToFree = *worker.MinReplicas - int32(c.freeSlots) + 1
+			maxWorkersToFree := *worker.MaxReplicas - int32(c.freeSlots) + 1
+			minWorkersToFree := *worker.MinReplicas - int32(c.freeSlots) + 1
+			index := len(c.runningJobs) - 1
 			for {
-				if numWorkersToFree == 0 || index < 0 {
+				if maxWorkersToFree == 0 || index < 0 {
 					break
 				}
 
@@ -1561,7 +1563,7 @@ func (c *MPIJobController) calculateWorkerReplicas(mpiJob *kubeflow.MPIJob) (int
 				jobMinReplicas := *it.mpiJob.Spec.MPIReplicaSpecs[kubeflow.MPIReplicaTypeWorker].MinReplicas
 				if int32(len(workerPodList)) > jobMinReplicas && c.lastAction[getJobKey(&it.mpiJob)].Add(c.rescaleGap).Before(c.clock.Now()) {
 					newPodCount := int32(math.Max(float64(jobMinReplicas),
-						float64(len(workerPodList)-int(numWorkersToFree))))
+						float64(len(workerPodList)-int(maxWorkersToFree))))
 					klog.Infof("Setting replicas for %s to %d", getJobKey(&it.mpiJob), newPodCount)
 
 					err := c.sendRescaleSignal(&it.mpiJob, int32(len(workerPodList)), newPodCount)
@@ -1572,20 +1574,21 @@ func (c *MPIJobController) calculateWorkerReplicas(mpiJob *kubeflow.MPIJob) (int
 					}
 
 					c.latestReplicas[getJobKey(&it.mpiJob)] = newPodCount
-					numWorkersToFree -= int32(len(workerPodList) - int(newPodCount))
+					maxWorkersToFree -= int32(len(workerPodList) - int(newPodCount))
+					minWorkersToFree -= int32(len(workerPodList) - int(newPodCount))
 					c.freeSlots += len(workerPodList) - int(newPodCount)
 
 					c.queue.AddRateLimited(getJobKey(&it.mpiJob))
 				}
 			}
-			if numWorkersToFree > 0 {
+			if minWorkersToFree > 0 {
 				// queue this job
 				//c.enqueueJobInternal(mpiJob)
-				klog.Infof("Queued job 2 %s, %d", getJobKey(mpiJob), numWorkersToFree)
+				klog.Infof("Queued job 2 %s, %d", getJobKey(mpiJob), minWorkersToFree)
 				return 0, jobQueuedError
 			}
 		}
-		return *worker.MinReplicas, nil
+		return int32(c.freeSlots) - 1, nil
 	} else {
 		return replicas, nil
 	}
